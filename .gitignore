@@ -1,4 +1,4 @@
 .ipynb_checkpoints/
 out_files/
-calculation_SWMT.out
+calculation*.out
 *.db
