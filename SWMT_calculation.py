@@ -15,8 +15,8 @@ import sys
 import matplotlib.path as mpath
 
 if __name__ == '__main__':
-    def calculate_SWMT(expt, session, year, frequency,
-                       path_output, lat_north=-59):
+    def calculate_SWMT(expt, expt_name, session, year, frequency,
+                       path_output, lat_range):
 
         '''
         Computes southern ocean surface water mass transformation rates
@@ -25,12 +25,13 @@ if __name__ == '__main__':
         Suitable for analysis of high-resolution (0.1 degree) output
         (the scattered .load()'s allowed this)
 
-        expt - text string indicating the name of the experiment
+        expt - text string indicating the original name of the experiment
+        expt_name - text string providing a shorter or more descriptive
+            name of the experiment
         session - a database session created by cc.database.create_session()
-        start_time - text string designating the start date ('YYYY-MM-DD')
-        end_time - text string indicating the end date ('YYYY-MM-DD')
-        path_output - text string indicating directory where output databases are
-            to be saved
+        year - int indicating the year
+        path_output - text string indicating directory where output databases
+            are to be saved
         filename - text string of the name of the saved file
         lat_north - function computes processes between lat = -90 and
             lat = lat_north
@@ -45,40 +46,48 @@ if __name__ == '__main__':
         from gsw import alpha, SA_from_SP, p_from_z, CT_from_pt, beta, sigma1
         '''
 
+        # time and latitude range
+        start_time = str(year) + '-01-01'
+        end_time = str(year) + '-12-31'
+        time_slice = slice(start_time, end_time)
+        lat_slice = lat_range
+
         # load variables
         # potential temperature
-        SST = cc.querying.getvar(expt, 'tos', session, frequency='1 daily') 
+        SST = cc.querying.getvar(
+            expt, 'thetao', session, frequency=frequency,
+            start_time=start_time, end_time=end_time,
+            chunks={'yh': '200MB', 'xh': '200MB'}).isel(z_l=0)
         # practical salinity
-        SSS_PSU =  cc.querying.getvar(expt, 'sos', session, frequency='1 daily')
+        SSS_PSU =  cc.querying.getvar(
+            expt, 'so', session, frequency=frequency,
+            start_time=start_time, end_time=end_time,
+            chunks={'yh': '200MB', 'xh': '200MB'}).isel(z_l=0)
 
         net_surface_heating = cc.querying.getvar(
-            expt, 'hfds', session, frequency=frequency)
+            expt, 'hfds', session, frequency=frequency,
+            start_time=start_time, end_time=end_time,
+            chunks={'yh': '200MB', 'xh': '200MB'})
         # mass flux of precip - evap + river ((kg of water)/m^2/s )
         pme_river = cc.querying.getvar(
-            expt, 'wfo', session, frequency=frequency)
+            expt, 'wfo', session, frequency=frequency,
+            start_time=start_time, end_time=end_time,
+            chunks={'yh': '200MB', 'xh': '200MB'})
+        # Net salt flux into ocean at surface (restoring + sea-ice) 
+        # ((kg of salt)/m^2/s )
+        salt_flux = cc.querying.getvar(
+            expt, 'salt_flux', session, frequency=frequency,
+            start_time=start_time, end_time=end_time,
+            chunks={'yh': '200MB', 'xh': '200MB'})
 
         # slice for time and latitudinal constraints
-        start_time=cftime.datetime(
-            year, 1, 1, 0, 0, 0, 0, calendar='noleap', has_year_zero=True)
-        end_time=cftime.datetime(
-            year, 12, 31, 0, 0, 0, 0, calendar='noleap', has_year_zero=True)
-        time_slice = slice(start_time, end_time)
-        lat_slice = slice(-90, lat_north)
         SST = SST.sel(time=time_slice, yh=lat_slice)
         SSS_PSU = SSS_PSU.sel(time=time_slice, yh=lat_slice)
         net_surface_heating = net_surface_heating.sel(time=time_slice, yh=lat_slice)
         pme_river = pme_river.sel(time=time_slice, yh=lat_slice)
 
-        # convert to monthly
-        time_monthly = pme_river.time.values
-        SST = SST.resample(
-            time="1M", label='left', loffset=timedelta(days=16)).mean("time")
-        SST['time'] = time_monthly
-        SSS_PSU = SSS_PSU.resample(
-            time="1M", label='left', loffset=timedelta(days=16)).mean("time")
-        SSS_PSU['time'] = time_monthly
-
         # extract coordinate arrays
+        time_monthly = SST.time.values
         yh = SST.yh.values
         xh = SST.xh.values
 
@@ -92,50 +101,38 @@ if __name__ == '__main__':
 
         # 2D arrays of depths, longitude, latitude and pressure
         depth_2D = xr.DataArray(
-            data = np.full((len(yh), len(xh)), depth),
-            dims = ["yh","xh"], coords = {'yh': yh, 'xh': xh})
-        xh_2D = np.tile(xh,(len(yh),1))
-        yh_2D = np.tile(yh,(len(xh),1)).transpose()
+            np.full((len(yh), len(xh)), depth),
+            dims=['yh', 'xh'], coords={'yh': yh, 'xh': xh})
+        xh_2D = np.tile(xh, (len(yh),1))
+        yh_2D = np.tile(yh, (len(xh),1)).transpose()
 
-        pressure = xr.DataArray(
-            p_from_z(depth_2D, yh_2D), coords=[yh, xh], dims=['yh', 'xh'],
-            name='pressure', attrs={'units': 'dbar'})
+        pressure = p_from_z(depth_2D, yh_2D)
 
         # convert units to absolute salinity
-        SSS = xr.DataArray(
-            SA_from_SP(SSS_PSU, pressure, xh_2D, yh_2D), coords=[time_monthly, yh, xh],
-            dims = ['time', 'yh', 'xh'], name='sea surface salinity',
-            attrs={'units': 'Absolute Salinity (g/kg)'})
-        ## convert to conservative temperature but in Celsius not Kelvin
-        SST_Conservative = xr.DataArray(
-            CT_from_pt(SSS, SST), coords=[time_monthly, yh, xh], dims=['time', 'yh', 'xh'],
-            name='sea surface temperature', attrs = {'units': 'Conservative Temperature (C)'})
+        SSS = SA_from_SP(SSS_PSU, pressure, xh_2D, yh_2D)
+
+        ## convert to conservative temperature
+        SST_Conservative = CT_from_pt(SSS, SST)
 
         # compute potential density referenced to 1000dbar
         # (or referenced otherwise, depending on your purpose)
-        pot_rho_1 = xr.DataArray(
-            sigma1(SSS, SST_Conservative), coords=[time_monthly, yh, xh],
-            dims = ['time', 'yh', 'xh'], name='potential density ref 1000dbar',
-            attrs = {'units': 'kg/m^3 (-1000 kg/m^3)'})
-        pot_rho_1 = pot_rho_1.load()
+        pot_rho_1 = sigma1(SSS, SST_Conservative).compute()
 
         # Compute salt transformation (no density binning)
-        haline_contraction = xr.DataArray(
-            beta(SSS, SST_Conservative, pressure), coords=[time_monthly, yh, xh],
-            dims=['time', 'yh', 'xh'],
-            name='saline contraction coefficient (constant conservative temp)',
-            attrs = {'units': 'kg/g'})
-        salt_transformation = haline_contraction*SSS*pme_river*days_per_month
-        salt_transformation = salt_transformation.load()
+        haline_contraction = beta(SSS, SST_Conservative, pressure)
+        # Note that the salt flux has units of (kg of salt)/m^2/s, while beta has
+        # units of kg / (g of salt), so we need to multiply the salt flux by 1000,
+        # the fresh water flux pme_river has units of (kg of water)/m^2/s and needs
+        # to be multiplied by SSS to convert to (g of salt)/m^2/s
+        # units of salt_transformation is (kg of water)/m^2 but it will later be
+        # divided by time and density and be in m/s:
+        salt_transformation = (days_per_month * haline_contraction * (
+            SSS * pme_river - 1000 * salt_flux)).compute()
 
         # Compute heat transformation (no density binning)
-        thermal_expansion = xr.DataArray(
-            alpha(SSS, SST_Conservative, pressure), coords=[time_monthly, yh, xh],
-            dims=['time', 'yh', 'xh'],
-            name='thermal expansion coefficient (constant conservative temp)',
-            attrs = {'units':'1/K'})
-        heat_transformation =  thermal_expansion*net_surface_heating*days_per_month
-        heat_transformation = heat_transformation.load()
+        thermal_expansion = alpha(SSS, SST_Conservative, pressure)
+        heat_transformation =  (
+            thermal_expansion*net_surface_heating*days_per_month).compute()
 
         # Record the time bounds before summing through time 
         # (just to make sure it's consistent with requested years)
@@ -216,13 +213,13 @@ if __name__ == '__main__':
              'time_bounds': time_bounds})
         ds.coords['isopycnal_bins'] = isopycnal_bin_mid  # isopycnal bin midpoints
         ds.attrs = {'units': 'm/s'}
-        comp = dict(chunksizes=(1, 42, 255, 188),
+        comp = dict(chunksizes=(1, 124, 230, 720),
                     zlib=True, complevel=5, shuffle=True)
         enc = {var: comp for var in ds.data_vars}
         ds.to_netcdf(
-            path_output + 'SWMT_' + expt + '_mean_' + time_bounds + '.nc',
+            path_output + 'SWMT_' + expt_name + '_mean_' + time_bounds + '.nc',
             encoding=enc)
-        print('SWMT_' + expt + '_mean_' + time_bounds + '.nc' +
+        print('SWMT_' + expt_name + '_mean_' + time_bounds + '.nc' +
               ' saved to ' + path_output)
     
     def mask_from_polygon(lon, lat, xh, yh):
@@ -240,33 +237,28 @@ if __name__ == '__main__':
             mask, dims=['yh', 'xh'], coords={'xh': xh, 'yh': yh})
         return mask
     
-    def shelf_mask_isobath(var, output_mask=False):
+    def shelf_mask_isobath(var, contour_depth, resolution, output_mask=False):
         '''
-        Mask varibales from MOM6 at 1/10th by the region polewards
-        of the 1000m isobath
+        Masks varibales by the region polewards of a given isobath
         '''
-        contour_file = np.load(
-            '/g/data/ik11/grids/Antarctic_slope_contour_1000m.npz')
 
-        shelf_mask = contour_file['contour_masked_above']
-        yh = contour_file['yt_ocean']
-        xh = contour_file['xt_ocean']
+        ds_contour = xr.open_dataset(
+            '/home/142/cs6673/work/mom6_comparison/Antarctic_slope_contours/' +
+            'Antarctic_slope_contour_' + str(contour_depth) + 'm_MOM6_' + resolution +
+            'deg.nc')
 
-        # in this file the points along the isobath are given a positive value,
-        # the points outside (northwards) of the isobath are given a value of
-        # -100 and all the points on the continental shelf have a value of 0 
+        shelf_mask = ds_contour.contour_masked_above.sel(yh=slice(var.yh[0], var.yh[-1]))
+        yh = ds_contour.yh.sel(yh=slice(var.yh[0], var.yh[-1]))
+        xh = ds_contour.xh
+
+        # in this file the points along the isobath are given a positive value, the points outside (northwards) 
+        # of the isobath are given a value of -100 and all the points on the continental shelf have a value of 0 
         # so we mask for the 0 values 
-        shelf_mask[np.where(shelf_mask!=0)] = np.nan
-        shelf_mask = shelf_mask+1
-        shelf_map = np.nan_to_num(shelf_mask)
-        shelf_mask = xr.DataArray(
-            shelf_mask, coords = [('yh', yh), ('xh', xh)])
-        shelf_map = xr.DataArray(
-            shelf_map, coords = [('yh', yh), ('xh', xh)])
+        shelf_mask = shelf_mask.where(shelf_mask == 0)+1
+        shelf_mask = shelf_mask.where(shelf_mask == 1, 0)
 
-        # then we want to multiply the variable with the mask so we need to account
-        # for the shape of the mask. The mask uses a northern cutoff of 59S.
-        masked_var = var.sel(yh = slice(-90, -59.03)) * shelf_mask
+        # multiply the variable with the mask
+        masked_var = var * shelf_mask
 
         if output_mask == True:
             return masked_var, shelf_map
@@ -279,17 +271,38 @@ if __name__ == '__main__':
 
     year = int(sys.argv[1])
     expt = sys.argv[2]
+    expt_name = sys.argv[3]
+
+    db = expt_name + '.db'
+    session = cc.database.create_session(db)
     
-    session = cc.database.create_session()
     frequency = '1 monthly'
     path_output = '/g/data/e14/cs6673/mom6_comparison/data_DSW/'
     
     """Calculate SWMT"""
 
-    calculate_SWMT(expt, session, year, frequency, path_output, lat_north=-59)
+    calculate_SWMT(expt, expt_name, session, year, frequency,
+                   path_output, lat_range=slice(-79, -59))
     
-    
+
     """Spatial sum of SWMT in DSW regions"""
+
+    DSW_region = {
+    'name': ['Weddell', 'Prydz', 'Adelie', 'Ross'],
+    'name_long': ['Weddell Sea', 'Prydz Bay', 'Adélie Coast', 'Ross Sea'],
+    'lon': [[-60, -35, -48, -62, -60],
+            [48, 73, 74, 48, 48],
+            [128-360, 152-360, 152-360, 128-360, 128-360],
+            [185-360, 160-360, 164-360, 172-360, 185-360]],
+    'lat': [[-71, -75, -78, -75, -71],
+            [-65, -66.5, -69, -68, -65],
+            [-64.5, -66, -69, -67.5, -64.5],
+            [-78, -78, -73, -71.5, -78]]}
+
+    """Spatial sum of SWMT in DSW regions"""
+
+    contour_depth = 1000
+    resolution = expt_name.split('_')[1][:-3]
 
     DSW_region = {
     'name': ['Weddell', 'Prydz', 'Adelie', 'Ross'],
@@ -320,15 +333,16 @@ if __name__ == '__main__':
     mask_DSW = mask_DSW.where(mask_DSW != 0)
 
     ds_SWMT = xr.open_mfdataset(
-        path_output + 'SWMT_' + expt + '_mean_' + str(year) + '*.nc')
+        path_output + 'SWMT_' + expt_name + '_mean_' + str(year) +
+        '_1-' + str(year) + '_12.nc', chunks='auto')
     swmt_heat = ds_SWMT.binned_heat_transformation
     swmt_salt = ds_SWMT.binned_salt_transformation
 
-    swmt_heat_shelf = shelf_mask_isobath(swmt_heat)
-    swmt_salt_shelf = shelf_mask_isobath(swmt_salt)
-    area_shelf = shelf_mask_isobath(area)
+    swmt_heat_shelf = shelf_mask_isobath(swmt_heat, contour_depth, resolution)
+    swmt_salt_shelf = shelf_mask_isobath(swmt_salt, contour_depth, resolution)
+    area_shelf = shelf_mask_isobath(area, contour_depth, resolution)
 
-    area_DSW = (mask_DSW * area.sel(yh=slice(-90, -59)))
+    area_DSW = (mask_DSW * area_shelf.sel(yh=slice(-79, -59)))
     swmt_heat_DSW_regions = (swmt_heat_shelf * area_DSW/1e6).sum(
         ['xh', 'yh']).compute()
     swmt_salt_DSW_regions = (swmt_salt_shelf * area_DSW/1e6).sum(
@@ -341,6 +355,5 @@ if __name__ == '__main__':
     comp = dict(zlib=True, complevel=5, shuffle=True)
     enc = {var: comp for var in ds.data_vars}
     ds.to_netcdf(
-        path_output + 'SWMT_in_DSW_region_' + expt + '_' + str(year) + '.nc',
-        encoding=enc)
-
+        path_output + 'SWMT_in_DSW_region_' + expt_name + '_' + str(year) +
+        '.nc', encoding=enc)
