@@ -17,10 +17,14 @@ if __name__ == '__main__':
     year = int(sys.argv[1])
     year = str(year)
     expt = sys.argv[2]
+    expt_name = sys.argv[3]
+    contour_depth = sys.argv[4]
     
-    session = cc.database.create_session()
+    db = expt_name + '.db'
+    session = cc.database.create_session(db)
     frequency = '1 monthly'
     path_output = '/g/data/e14/cs6673/mom6_comparison/data_DSW/'
+    resolution = expt_name.split('_')[1][:-3]
     
     start_time= year + '-01-01'
     end_time= year + '-12-31'
@@ -28,54 +32,23 @@ if __name__ == '__main__':
     # reference density in MOM6 
     rho_0 = 1035.0
     # Note: change this range, so it matches the size of contour arrays
-    lat_range = slice(-90,-59)
-
-    
-    '''Open grid cell width data for domain'''
-    # some grid data is required, a little complicated because these
-    # variables don't behave well with some 
-    dyt = cc.querying.getvar(expt, 'dyt',session, n=1)
-    dxu = cc.querying.getvar(expt, 'dxCu',session, n=1)
-    dxv = cc.querying.getvar(expt, 'dxCv',session, n=1)
-
-    # select latitude range:
-    dyt = dyt.sel(yh=lat_range)
-    dxu = dxu.sel(yh=lat_range)
-    dxv = dxv.sel(yq=lat_range)
+    lat_range = slice(-79, -55)
 
     '''Open contour data'''
-    isobath_depth = 1000
-    outfile = ('/g/data/v45/akm157/model_data/access-om2/Antarctic_slope_contour_' +
-               str(isobath_depth) + 'm.npz')
-    data = np.load(outfile)
-    mask_y_transport = data['mask_y_transport']
-    mask_x_transport = data['mask_x_transport']
-    mask_y_transport_numbered = data['mask_y_transport_numbered']
-    mask_x_transport_numbered = data['mask_x_transport_numbered']
+    ds_contour = xr.open_dataset(
+        '/home/142/cs6673/work/mom6_comparison/Antarctic_slope_contours/' +
+        'Antarctic_slope_contour_' + str(contour_depth) + 'm_MOM6_' + resolution +
+        'deg.nc')
 
-    yh = cc.querying.getvar(expt, 'yh', session, n=1)
-    yh = yh.sel(yh=lat_range)
-    yq = cc.querying.getvar(expt, 'yq', session, n=1)
-    yq = yq.sel(yq=lat_range)
-    yq = yq[1:]
-    xh = cc.querying.getvar(expt, 'xh', session, n=1)
-    xq = cc.querying.getvar(expt, 'xq', session, n=1)[1:]
-
-    # Convert contour masks to data arrays, so we can multiply them later.
-    # We need to ensure the lat lon coordinates correspond to the actual data location:
-    #       The y masks are used for vmo, so like vmo this should have dimensions (yq, xh).
-    #       The x masks are used for umo, so like umo this should have dimensions (yh, xq).
-    #       However the actual name will always be simply y or x irrespective of the variable
-    #       to make concatenation of transports in both direction and sorting possible.
-
-    mask_x_transport = xr.DataArray(
-        mask_x_transport, coords=[('y', yh.data), ('x', xq.data)])
-    mask_y_transport = xr.DataArray(
-        mask_y_transport, coords=[('y', yq.data), ('x', xh.data)])
-    mask_x_transport_numbered = xr.DataArray(
-        mask_x_transport_numbered, coords=[('y', yh.data), ('x', xq.data)])
-    mask_y_transport_numbered = xr.DataArray(
-        mask_y_transport_numbered, coords=[('y', yq.data), ('x', xh.data)])
+    # load data and rename coordinates to general x/y to be able to multiply them
+    mask_y_transport = ds_contour.mask_y_transport.rename(
+        {'yq': 'y', 'xh': 'x'})
+    mask_x_transport = ds_contour.mask_x_transport.rename(
+        {'yh': 'y', 'xq': 'x'})
+    mask_y_transport_numbered = ds_contour.mask_y_transport_numbered.rename(
+        {'yq': 'y', 'xh': 'x'})
+    mask_x_transport_numbered = ds_contour.mask_x_transport_numbered.rename(
+        {'yh': 'y', 'xq': 'x'})
 
     # number of points along contour:
     num_points = int(np.maximum(
@@ -123,7 +96,6 @@ if __name__ == '__main__':
     umo = umo.sel(yh=lat_range).sel(time=slice(start_time,end_time))
     umo = umo.isel(xq=slice(1, None))
 
-
     # Note that vmo is Ocean Mass Y Transport (kg s-1) and defined as the transport across
     # the northern edge of a tracer cell so its coordinates should be (yq, xh).
     # umo is Ocean Mass X Transport (kg s-1) and defined as the transport across
@@ -164,9 +136,14 @@ if __name__ == '__main__':
     ds = vol_trans_across_contour.to_dataset()
     ds['lat'] = lat_along_contour
     ds['lon'] = lon_along_contour
+    if len(vol_trans_across_contour.contour_index) < 15000:
+        chunk_ind = len(vol_trans_across_contour.contour_index)
+    else:
+        chunk_ind = 10000
     enc = {'vol_trans_across_contour':
-       {'chunksizes': (12, 79, 6002),
-        'zlib': True, 'complevel': 5, 'shuffle': True}}
+           {'chunksizes': (12, 99, chunk_ind),
+            'zlib': True, 'complevel': 5, 'shuffle': True}}
     ds.to_netcdf(
-        path_output + 'vol_transp_across_contour_' + expt + '_' +
-        frequency[:3:2] + '_' + year + '.nc', encoding=enc)
+        path_output + 'vol_transp_across_' + str(contour_depth) +
+        'm_isobath_' + expt_name + '_' + frequency[:3:2] + '_' +
+        year + '.nc', encoding=enc)
