@@ -9,9 +9,7 @@
 #PBS -o calculation_timeseries.out
 #PBS -j oe
 
-# Run this script with qsub
-
 module use /g/data/hh5/public/modules
 
-python3 Timeseries_calculation.py ${year} ${expt} &>> Timeseries_calculation_${expt}_${year}.txt
+python3 Timeseries_calculation.py ${year} ${expt} ${expt_name} &>> Timeseries_calculation_${expt}_${year}.txt
 

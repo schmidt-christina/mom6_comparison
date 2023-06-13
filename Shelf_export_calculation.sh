@@ -9,9 +9,6 @@
 #PBS -o calculation_Shelf_export.out
 #PBS -j oe
 
-# Run this script with qsub
-
 module use /g/data/hh5/public/modules
-#module load conda/analysis3-unstable
 
-python3 Shelf_export_calculation.py ${year} ${expt} &>> Shelf_export_calculation_${expt}_${year}.txt
+python3 Shelf_export_calculation.py ${year} ${expt} ${expt_name} ${contour_depth} &>> Shelf_export_calculation_${expt}_${year}_${contour_depth}.txt

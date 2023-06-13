@@ -9,10 +9,8 @@
 #PBS -o calculation_SWMT.out
 #PBS -j oe
 
-# Run this script with qsub
-
 module use /g/data/hh5/public/modules
 #module load conda/analysis3-unstable
 
-python3 SWMT_calculation.py ${year} ${expt} &>> SWMT_calculation_${expt}_${year}.txt
+python3 SWMT_calculation.py ${year} ${expt} ${expt_name} &>> SWMT_calculation_${expt}_${year}.txt
 
