@@ -18,10 +18,8 @@ if __name__ == '__main__':
     year = str(year)
     expt = sys.argv[2]
     expt_name = sys.argv[3]
-    contour_depth = sys.argv[4]
+    contour_depth = int(sys.argv[4])
     
-    # db = expt_name + '.db'
-    # session = cc.database.create_session(db)
     session = cc.database.create_session()
     frequency = '1 monthly'
     path_output = '/g/data/e14/cs6673/mom6_comparison/data_DSW/'
@@ -33,7 +31,10 @@ if __name__ == '__main__':
     # reference density in MOM6 
     rho_0 = 1035.0
     # Note: change this range, so it matches the size of contour arrays
-    lat_range = slice(-79, -55)
+    if contour_depth <= 2500:
+        lat_range = slice(-79, -55)
+    else:
+        lat_range = slice(-79, -50)
 
     '''Open contour data'''
     ds_contour = xr.open_dataset(
@@ -111,40 +112,86 @@ if __name__ == '__main__':
     umo = umo/(1e6*rho_0)*mask_x_transport
     
     '''Extract transport values along contour'''
-    umo_i = umo.compute()
-    vmo_i = vmo.compute()
-
-    # stack transports into 1d and drop any points not on contour:
-    x_transport_1d_i = umo_i.stack(contour_index=['y', 'x'])
-    x_transport_1d_i = x_transport_1d_i.where(mask_x_numbered_1d>0, drop=True)
-    y_transport_1d_i = vmo_i.stack(contour_index=['y', 'x'])
-    y_transport_1d_i = y_transport_1d_i.where(mask_y_numbered_1d>0, drop=True)
-
-    # combine all points on contour:
-    vol_trans_across_contour = xr.concat(
-        (x_transport_1d_i, y_transport_1d_i), dim='contour_index')
-    vol_trans_across_contour = vol_trans_across_contour.sortby(contour_ordering)
-    vol_trans_across_contour = vol_trans_across_contour.drop_vars(
-        {'x', 'contour_index', 'y'})
-    vol_trans_across_contour.coords['contour_index'] = contour_index_array
-    vol_trans_across_contour = vol_trans_across_contour.compute()
-    
-    '''Save data'''
-    vol_trans_across_contour.name = 'vol_trans_across_contour'
-    vol_trans_across_contour.attrs = {
-        'long_name': 'Volume transport across 1000-m isobath',
-        'units': 'Sv'}
-    ds = vol_trans_across_contour.to_dataset()
-    ds['lat'] = lat_along_contour
-    ds['lon'] = lon_along_contour
-    if len(vol_trans_across_contour.contour_index) < 15000:
-        chunk_ind = len(vol_trans_across_contour.contour_index)
+    if resolution == '0025':
+        for l in [0, 4, 8]:
+            umo_i = umo[l:l+4, :].compute()
+            vmo_i = vmo[l:l+4, :].compute()
+            
+            # stack transports into 1d and drop any points not on contour:
+            x_transport_1d_i = umo_i.stack(contour_index=['y', 'x'])
+            x_transport_1d_i = x_transport_1d_i.where(mask_x_numbered_1d>0, drop=True)
+            y_transport_1d_i = vmo_i.stack(contour_index=['y', 'x'])
+            y_transport_1d_i = y_transport_1d_i.where(mask_y_numbered_1d>0, drop=True)
+            
+            # combine all points on contour:
+            vol_trans_across_contour = xr.concat(
+                (x_transport_1d_i, y_transport_1d_i), dim='contour_index')
+            vol_trans_across_contour = vol_trans_across_contour.sortby(contour_ordering)
+            vol_trans_across_contour = vol_trans_across_contour.drop_vars(
+                {'x', 'contour_index', 'y'})
+            vol_trans_across_contour.coords['contour_index'] = contour_index_array
+            vol_trans_across_contour = vol_trans_across_contour.compute()
+        
+            '''save data'''
+            vol_trans_across_contour.name = 'vol_trans_across_contour'
+            vol_trans_across_contour.attrs = {
+                'long_name': 'Volume transport across 1000-m isobath',
+                'units': 'Sv'}
+            ds = vol_trans_across_contour.to_dataset()
+            ds['lat'] = lat_along_contour
+            ds['lon'] = lon_along_contour
+            if len(vol_trans_across_contour.contour_index) < 15000:
+                chunk_ind = len(vol_trans_across_contour.contour_index)
+            else:
+                chunk_ind = 10000
+            enc = {'vol_trans_across_contour':
+                   {'chunksizes': (len(vol_trans_across_contour.time), 99, chunk_ind),
+                    'zlib': True, 'complevel': 5, 'shuffle': True}}
+            time_bounds =  (
+                str(vol_trans_across_contour.coords['time.year'][0].values) + '_' +
+                str(vol_trans_across_contour.coords['time.month'][0].values) + '-' +
+                str(vol_trans_across_contour.coords['time.year'][-1].values) + '_' +
+                str(vol_trans_across_contour.coords['time.month'][-1].values))
+            ds.to_netcdf(
+                path_output + 'vol_transp_across_' + str(contour_depth) +
+                'm_isobath_' + expt_name + '_' + frequency[:3:2] + '_' +
+                time_bounds + '.nc', encoding=enc)
+            del umo_i, vmo_i
     else:
-        chunk_ind = 10000
-    enc = {'vol_trans_across_contour':
-           {'chunksizes': (12, 99, chunk_ind),
-            'zlib': True, 'complevel': 5, 'shuffle': True}}
-    ds.to_netcdf(
-        path_output + 'vol_transp_across_' + str(contour_depth) +
-        'm_isobath_' + expt_name + '_' + frequency[:3:2] + '_' +
-        year + '.nc', encoding=enc)
+        umo_i = umo.compute()
+        vmo_i = vmo.compute()
+        
+        # stack transports into 1d and drop any points not on contour:
+        x_transport_1d_i = umo_i.stack(contour_index=['y', 'x'])
+        x_transport_1d_i = x_transport_1d_i.where(mask_x_numbered_1d>0, drop=True)
+        y_transport_1d_i = vmo_i.stack(contour_index=['y', 'x'])
+        y_transport_1d_i = y_transport_1d_i.where(mask_y_numbered_1d>0, drop=True)
+        
+        # combine all points on contour:
+        vol_trans_across_contour = xr.concat(
+            (x_transport_1d_i, y_transport_1d_i), dim='contour_index')
+        vol_trans_across_contour = vol_trans_across_contour.sortby(contour_ordering)
+        vol_trans_across_contour = vol_trans_across_contour.drop_vars(
+            {'x', 'contour_index', 'y'})
+        vol_trans_across_contour.coords['contour_index'] = contour_index_array
+        vol_trans_across_contour = vol_trans_across_contour.compute()
+    
+        """save data"""
+        vol_trans_across_contour.name = 'vol_trans_across_contour'
+        vol_trans_across_contour.attrs = {
+            'long_name': 'Volume transport across 1000-m isobath',
+            'units': 'Sv'}
+        ds = vol_trans_across_contour.to_dataset()
+        ds['lat'] = lat_along_contour
+        ds['lon'] = lon_along_contour
+        if len(vol_trans_across_contour.contour_index) < 15000:
+            chunk_ind = len(vol_trans_across_contour.contour_index)
+        else:
+            chunk_ind = 10000
+        enc = {'vol_trans_across_contour':
+               {'chunksizes': (len(vol_trans_across_contour.time), 99, chunk_ind),
+                'zlib': True, 'complevel': 5, 'shuffle': True}}
+        ds.to_netcdf(
+            path_output + 'vol_transp_across_' + str(contour_depth) +
+            'm_isobath_' + expt_name + '_' + frequency[:3:2] + '_' +
+            year + '.nc', encoding=enc)
