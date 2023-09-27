@@ -4,7 +4,7 @@
 #PBS -l mem=180GB
 #PBS -l jobfs=100GB
 #PBS -q normal
-#PBS -l walltime=1:00:00
+#PBS -l walltime=2:00:00
 #PBS -l storage="gdata/hh5+gdata/ik11+gdata/v45+gdata/e14+gdata/cj50+scratch/v45+scratch/x77"
 #PBS -l wd
 #PBS -o calculation_Shelf_export.out
