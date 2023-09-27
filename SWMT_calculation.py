@@ -273,8 +273,6 @@ if __name__ == '__main__':
     expt = sys.argv[2]
     expt_name = sys.argv[3]
 
-    # db = expt_name + '.db'
-    # session = cc.database.create_session(db)
     session = cc.database.create_session()
     
     frequency = '1 monthly'
