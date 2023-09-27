@@ -135,7 +135,8 @@ if __name__ == '__main__':
             '''save data'''
             vol_trans_across_contour.name = 'vol_trans_across_contour'
             vol_trans_across_contour.attrs = {
-                'long_name': 'Volume transport across 1000-m isobath',
+                'long_name': 'Volume transport across' + str(contour_depth) +
+                'm isobath',
                 'units': 'Sv'}
             ds = vol_trans_across_contour.to_dataset()
             ds['lat'] = lat_along_contour
@@ -179,7 +180,8 @@ if __name__ == '__main__':
         """save data"""
         vol_trans_across_contour.name = 'vol_trans_across_contour'
         vol_trans_across_contour.attrs = {
-            'long_name': 'Volume transport across 1000-m isobath',
+            'long_name': 'Volume transport across' + str(contour_depth) +
+            'm isobath',
             'units': 'Sv'}
         ds = vol_trans_across_contour.to_dataset()
         ds['lat'] = lat_along_contour
