@@ -10,7 +10,7 @@ import cosima_cookbook as cc
 from dask.distributed import Client
 import cftime
 from datetime import timedelta
-from gsw import alpha, SA_from_SP, p_from_z, CT_from_pt, beta, sigma1
+from gsw import alpha, SA_from_SP, p_from_z, CT_from_pt, beta, sigma1, sigma2
 import sys
 import matplotlib.path as mpath
 
@@ -116,7 +116,7 @@ if __name__ == '__main__':
 
         # compute potential density referenced to 1000dbar
         # (or referenced otherwise, depending on your purpose)
-        pot_rho_1 = sigma1(SSS, SST_Conservative).compute()
+        pot_rho = sigma2(SSS, SST_Conservative).compute()
 
         # Compute salt transformation (no density binning)
         haline_contraction = beta(SSS, SST_Conservative, pressure)
@@ -153,7 +153,8 @@ if __name__ == '__main__':
 
         # alter if this density range doesn't capture surface processes in your
         # study region, or if a different density field (not sigma1) is used
-        isopycnal_bins = np.arange(31, 33.5, 0.02)
+        # isopycnal_bins = np.arange(31, 33.5, 0.02)  # for sigma1
+        isopycnal_bins = np.arange(36, 38, 0.02)  # for sigma2
 
         bin_bottoms = isopycnal_bins[:-1]
         binned_salt_transformation = xr.DataArray(
@@ -162,8 +163,8 @@ if __name__ == '__main__':
             name='salt transformation in isopycnal bins summed over time')
         binned_salt_transformation.chunk({'isopycnal_bins': 1})
         for i in range(len(isopycnal_bins)-1):
-            bin_mask = pot_rho_1.where(pot_rho_1 <= isopycnal_bins[i+1]).where(
-                pot_rho_1 > isopycnal_bins[i]) * 0 + 1
+            bin_mask = pot_rho.where(pot_rho <= isopycnal_bins[i+1]).where(
+                pot_rho > isopycnal_bins[i]) * 0 + 1
             masked_transform = (salt_transformation * bin_mask).sum(dim='time') 
             masked_transform = masked_transform.where(masked_transform != 0) 
             masked_transform = masked_transform.load()
@@ -179,8 +180,8 @@ if __name__ == '__main__':
         # This for loop is likely the least efficient part of the code.
         # The problem can be vectorised for improved speed
         for i in range(len(isopycnal_bins)-1):
-            bin_mask = pot_rho_1.where(pot_rho_1 <= isopycnal_bins[i+1]).where(
-                pot_rho_1 > isopycnal_bins[i]) * 0 + 1
+            bin_mask = pot_rho.where(pot_rho <= isopycnal_bins[i+1]).where(
+                pot_rho > isopycnal_bins[i]) * 0 + 1
             masked_transform = (heat_transformation * bin_mask).sum(dim='time') 
             masked_transform = masked_transform.where(masked_transform != 0)
             masked_transform = masked_transform.load()
@@ -213,11 +214,11 @@ if __name__ == '__main__':
              'time_bounds': time_bounds})
         ds.coords['isopycnal_bins'] = isopycnal_bin_mid  # isopycnal bin midpoints
         ds.attrs = {'units': 'm/s'}
-        comp = dict(chunksizes=(1, 124, 230, 720),
+        comp = dict(chunksizes=(1, len(ds.isopycnal_bins), 230, 720),
                     zlib=True, complevel=5, shuffle=True)
         enc = {var: comp for var in ds.data_vars}
         ds.to_netcdf(
-            path_output + 'SWMT_' + expt_name + '_mean_' + time_bounds + '.nc',
+            path_output + 'SWMT_sigma2_' + expt_name + '_mean_' + time_bounds + '.nc',
             encoding=enc)
         print('SWMT_' + expt_name + '_mean_' + time_bounds + '.nc' +
               ' saved to ' + path_output)
@@ -332,7 +333,7 @@ if __name__ == '__main__':
     mask_DSW = mask_DSW.where(mask_DSW != 0)
 
     ds_SWMT = xr.open_mfdataset(
-        path_output + 'SWMT_' + expt_name + '_mean_' + str(year) +
+        path_output + 'SWMT_sigma2_' + expt_name + '_mean_' + str(year) +
         '_1-' + str(year) + '_12.nc', chunks='auto')
     swmt_heat = ds_SWMT.binned_heat_transformation
     swmt_salt = ds_SWMT.binned_salt_transformation
@@ -354,5 +355,5 @@ if __name__ == '__main__':
     comp = dict(zlib=True, complevel=5, shuffle=True)
     enc = {var: comp for var in ds.data_vars}
     ds.to_netcdf(
-        path_output + 'SWMT_in_DSW_region_' + expt_name + '_' + str(year) +
+        path_output + 'SWMT_sigma2_in_DSW_region_' + expt_name + '_' + str(year) +
         '.nc', encoding=enc)
