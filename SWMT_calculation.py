@@ -154,7 +154,7 @@ if __name__ == '__main__':
         # alter if this density range doesn't capture surface processes in your
         # study region, or if a different density field (not sigma1) is used
         # isopycnal_bins = np.arange(31, 33.5, 0.02)  # for sigma1
-        isopycnal_bins = np.arange(36, 38, 0.02)  # for sigma2
+        isopycnal_bins = np.arange(36.8, 37.6, 0.005)  # for sigma2
 
         bin_bottoms = isopycnal_bins[:-1]
         binned_salt_transformation = xr.DataArray(
