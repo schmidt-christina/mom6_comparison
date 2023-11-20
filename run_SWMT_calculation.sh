@@ -16,6 +16,6 @@ for y in {1991..2010}; do
 done
 
 
-for y in {1991..1999}; do
+for y in {1991..2000}; do
    qsub -v year=$y,expt='panant-0025-zstar-ACCESSyr2',expt_name='panan_0025deg_jra55_ryf' SWMT_calculation.sh
 done
