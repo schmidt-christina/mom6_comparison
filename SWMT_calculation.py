@@ -216,7 +216,7 @@ if __name__ == '__main__':
         ds.to_netcdf(
             path_output + 'SWMT_sigma2_' + expt_name + '_mean_' + time_bounds + '.nc',
             encoding=enc)
-        print('SWMT_' + expt_name + '_mean_' + time_bounds + '.nc' +
+        print('SWMT_sigma2_' + expt_name + '_mean_' + time_bounds + '.nc' +
               ' saved to ' + path_output)
 
     def calculate_SWMT_monthly(expt, expt_name, session, start_time,
@@ -477,34 +477,34 @@ if __name__ == '__main__':
 
     # calculate_SWMT(expt, expt_name, session, year, frequency,
     #                path_output, lat_range=slice(-79, -59))
-    if resolution == '01':
-        start_time = str(year) + '-01-01'
-        end_time = str(year) + '-12-31'
-        calculate_SWMT_monthly(
-            expt, expt_name, session, start_time, end_time,
-            frequency, path_output, lat_range=slice(-79, -59))
-    elif resolution == '005':
-        month_start = ['-01-01', '-05-01', '-09-01']
-        month_end = ['-04-30', '-08-31', '-12-31']
-        for m in range(len(month_start)):
-            start_time = str(year) + month_start[m]
-            end_time = str(year) + month_end[m]
-            calculate_SWMT_monthly(
-                expt, expt_name, session, start_time, end_time,
-                frequency, path_output, lat_range=slice(-79, -59))
-    elif resolution == '0025':
-        month_start = ['-01-01', '-02-01', '-03-01', '-04-01',
-                       '-05-01', '-06-01', '-07-01', '-08-01',
-                       '-09-01', '-10-01', '-11-01', '-12-01']
-        month_end = ['-01-31', '-02-28', '-03-31', '-04-30',
-                     '-05-31', '-06-30', '-07-31', '-08-31',
-                     '-09-30', '-10-31', '-11-30', '-12-31']
-        for m in range(len(month_start)):
-            start_time = str(year) + month_start[m]
-            end_time = str(year) + month_end[m]
-            calculate_SWMT_monthly(
-                expt, expt_name, session, start_time, end_time,
-                frequency, path_output, lat_range=slice(-79, -59))
+    # if resolution == '01':
+    #     start_time = str(year) + '-01-01'
+    #     end_time = str(year) + '-12-31'
+    #     calculate_SWMT_monthly(
+    #         expt, expt_name, session, start_time, end_time,
+    #         frequency, path_output, lat_range=slice(-79, -59))
+    # elif resolution == '005':
+    #     month_start = ['-01-01', '-05-01', '-09-01']
+    #     month_end = ['-04-30', '-08-31', '-12-31']
+    #     for m in range(len(month_start)):
+    #         start_time = str(year) + month_start[m]
+    #         end_time = str(year) + month_end[m]
+    #         calculate_SWMT_monthly(
+    #             expt, expt_name, session, start_time, end_time,
+    #             frequency, path_output, lat_range=slice(-79, -59))
+    # elif resolution == '0025':
+    #     month_start = ['-01-01', '-02-01', '-03-01', '-04-01',
+    #                    '-05-01', '-06-01', '-07-01', '-08-01',
+    #                    '-09-01', '-10-01', '-11-01', '-12-01']
+    #     month_end = ['-01-31', '-02-28', '-03-31', '-04-30',
+    #                  '-05-31', '-06-30', '-07-31', '-08-31',
+    #                  '-09-30', '-10-31', '-11-30', '-12-31']
+    #     for m in range(len(month_start)):
+    #         start_time = str(year) + month_start[m]
+    #         end_time = str(year) + month_end[m]
+    #         calculate_SWMT_monthly(
+    #             expt, expt_name, session, start_time, end_time,
+    #             frequency, path_output, lat_range=slice(-79, -59))
     
 
     """Spatial sum of SWMT in DSW regions"""
@@ -554,8 +554,8 @@ if __name__ == '__main__':
     mask_DSW = mask_DSW.where(mask_DSW != 0)
 
     ds_SWMT = xr.open_mfdataset(
-        path_output + 'SWMT_sigma2_' + expt_name + '_1m_' + str(year) +
-        '*.nc', chunks='auto')
+        path_output + 'SWMT_sigma2_' + expt_name + '_mean_' + str(year) +
+        '_1-' + str(year) + '_12.nc', chunks='auto')
     if (resolution == '0025') & (len(ds_SWMT.time) == 12):
         for l in [0, 4, 8]:
             swmt_heat = ds_SWMT.isel(time=slice(l, l+4)).binned_heat_transformation
@@ -607,5 +607,5 @@ if __name__ == '__main__':
         comp = dict(zlib=True, complevel=5, shuffle=True)
         enc = {var: comp for var in ds.data_vars}
         ds.to_netcdf(
-            path_output + 'SWMT_sigma2_in_DSW_region_' + expt_name + '_1m_' +
+            path_output + 'SWMT_sigma2_in_DSW_region_' + expt_name + '_' +
             str(year) + '.nc', encoding=enc)
